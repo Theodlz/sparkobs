@@ -401,6 +401,7 @@ class Telescope:
             for tile in self.observable_fields[field_id]["tiles"]:
                 tiles.append((field_id, tile[0], tile[1]))
 
+        new_tiles = None
         with ProgressBar(total=int(len(tiles)*len(ranges)), desc='Computing fields probdensity') as progress:
             new_tiles = compute_tiles_probdensity(tiles, ranges, probdensities, progress)
 
@@ -410,7 +411,7 @@ class Telescope:
             field_id = tile[0]
             if field_id not in fields:
                 fields[field_id] = {**self.observable_fields[field_id], "tiles": [], "probdensity": 0}
-            fields[field_id]["tiles"].append((tile[0], tile[2]))
+            fields[field_id]["tiles"].append((tile[1], tile[2]))
             fields[field_id]["probdensity"] += tile[3]
 
         self.observable_fields = fields
@@ -429,6 +430,10 @@ class Telescope:
         fields = self.observable_fields
         fields = {k: v for k, v in sorted(fields.items(), key=lambda item: item[1]['probdensity'], reverse=True)}
 
+        #print the first 2 fields
+        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[0]]['probdensity']}")
+        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[1]]['probdensity']}")
+
         # rerank based on whether the field is in the primary or secondary grid using self.primary_limit
         primary_fields = {}
         secondary_fields = {}
@@ -440,6 +445,10 @@ class Telescope:
                 secondary_fields[field_id] = field
         fields = {**primary_fields, **secondary_fields}
 
+        #print the first 2 fields
+        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[0]]['probdensity']}")
+        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[1]]['probdensity']}")
+
         max_obs = len(self.filters)
         # schedule the fields
         plan = []
@@ -449,13 +458,16 @@ class Telescope:
             for i, t in enumerate(self.deltaT):
                 for field_id in fields.keys():
                     scheduled = scheduled_lookup[field_id]
-                    if scheduled['nb_obs'] < max_obs and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd:
+                    if (
+                        scheduled['nb_obs'] < max_obs and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd
+                        and fields[field_id]['airmasses'][i] < self.max_airmass and fields[field_id]['moon_angles'][i] > self.min_moon_angle
+                        ):
                         plan.append({
                             "obstime": (t+timedelta(seconds=self.min_time_interval*i)).isot,
                             "field_id": field_id,
                             "filt": self.filters[scheduled_lookup[field_id]['nb_obs']],
                             "exposure_time": self.exposure_time,
-                            "probdensity": field['probdensity'],
+                            "probdensity": fields[field_id]['probdensity'],
                         })
                         scheduled_lookup[field_id]['last_obs_time'] = t
                         scheduled_lookup[field_id]['nb_obs'] += 1
@@ -463,6 +475,10 @@ class Telescope:
 
             start_time = ap_time.Time(plan[0]['obstime'], format='isot')
             end_time = ap_time.Time(plan[-1]['obstime'], format='isot') + timedelta(seconds=self.exposure_time)
+
+            # show the first 2 observations
+            print(f"Observation {plan[0]['obstime']}: {plan[0]['field_id']} with probdensity {plan[0]['probdensity']}")
+            print(f"Observation {plan[1]['obstime']}: {plan[1]['field_id']} with probdensity {plan[1]['probdensity']}")
 
             self.plan = {
                 'nb_observations': len(plan),
