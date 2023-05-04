@@ -26,5 +26,5 @@ jobs:
           pip install -e '.[tests]'
       - name: Run tests
         run: |
-          pytest sparkobs/tests.py
+          python -m pytest sparkobs/tests.py
 
