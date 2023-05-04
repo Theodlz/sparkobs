@@ -40,9 +40,9 @@ def is_overlap(a,b):
     Parameters
     ----------
     a : tuple
-        tuple of the form (upper, lower)
+        tuple of the form (lower, upper)
     b : tuple
-        tuple of the form (upper, lower)
+        tuple of the form (lower, upper)
 
     Returns
     -------
@@ -50,7 +50,7 @@ def is_overlap(a,b):
         True if the 2 ranges overlap, False otherwise
     """
 
-    return (a[0] <= b[1]) and (b[0] <= a[1])
+    return (a[0] < b[1]) and (b[0] <= a[1]) # the upper bound is excluded, the lower bound is included
 
 @jit(nogil=True, nopython=True, fastmath=True)
 def overlap_value(a,b):
@@ -60,9 +60,9 @@ def overlap_value(a,b):
     Parameters
     ----------
     a : tuple
-        tuple of the form (upper, lower)
+        tuple of the form (lower, upper), upper is excluded
     b : tuple
-        tuple of the form (upper, lower)
+        tuple of the form (lower, upper), upper is excluded
 
     Returns
     -------
@@ -85,7 +85,7 @@ def compute_tiles_probdensity(tiles, ranges, probdensities, progress_proxy):
     tiles : list of tuples
         list of tiles, each tile is a tuple of the form (field_id, upper, lower])
     ranges : list of tuples
-        list of ranges, each range is a tuple of the form (upper, lower)
+        list of ranges, each range is a tuple of the form (lower, upper)
     probdensities : list of floats
         list of probdensities, each probdensity is a float
 
@@ -125,7 +125,7 @@ def get_occulted(url, nside=64):
     return ipix
 
 def uniq_to_range(uniq):
-    """Convert a uniq to a healpix range (upper, lower)."""
+    """Convert a uniq to a healpix range (lower, upper)."""
     level, ipix = uniq_to_level_ipix(uniq)
     shift = 2 * (LEVEL - level)
     range = (ipix << shift, (ipix + 1) << shift)
@@ -136,7 +136,7 @@ def skymap_from_url(url, level=0.9):
     """
     Load a skymap from a URL and return a dictionary with the following keys:
     - localization_name: name of the localization
-    - ranges: list of healpix ranges, each range is a tuple of the form (upper, lower)
+    - ranges: list of healpix ranges, each range is a tuple of the form (lower, upper)
     - probdensities: list of probdensities, each probdensity is a float
     - moc: MOC object corresponding to the skymap
 

@@ -1,5 +1,5 @@
 # Sparkobs
-**temporary title, clear lack of imagination**
+**temporary name, clear lack of imagination**
 
 ## What is it?
 Sparkobs is a lightweight package to create observation plans for various instruments, but faster than the speed of light (I might be lying about the speed of light part).
@@ -32,7 +32,7 @@ For now, it only works for ZTF, which fields and tiles are precomputed and store
 
 You can run it on a skymap given its URL, for example:
 ```bash
-python -m sparkobs --skymap_url="https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit" --telescope="config/ztf.toml"
+python -m sparkobs --telescope="config/ztf.toml" --skymap_url="https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit"
 ```
 
 or on a larger localization, for example:
