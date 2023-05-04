@@ -5,15 +5,16 @@ from datetime import timedelta
 
 import astroplan
 import astropy.units as u
-from numba.typed import List as NumbaList
+import joblib
 import numpy as np
 import tqdm
 from astropy import time as ap_time
 from astropy.coordinates import EarthLocation, SkyCoord, get_moon
 from mocpy import MOC
+from numba.typed import List as NumbaList
 from numba_progress import ProgressBar
 
-from utils import compute_tiles_probdensity, timeit
+from sparkobs.utils import compute_tiles_probdensity, timeit
 
 
 class Telescope:
@@ -58,6 +59,8 @@ class Telescope:
         self.location = EarthLocation.from_geodetic(self.lon * u.deg, self.lat * u.deg, self.elevation * u.m)
         self.fixed_location = True
         self.fields = config['fields']
+        if isinstance(self.fields, str):
+            self.fields = joblib.load(self.fields)
         self.max_airmass = config['max_airmass']
         self.min_moon_angle = config['min_moon_angle']
         self.start_date = config['start_date']
@@ -443,11 +446,11 @@ class Telescope:
 
         self.plan = plan
 
-    def save_plan(self, filename):
+    def save_plan(self, filename, plan=None):
         """Save the plan to a json file."""
         # create the directories of the path if they dont exist
         os.makedirs(os.path.dirname(filename), exist_ok=True)
 
         with open(filename, 'w') as f:
-            json.dump(self.plan, f, indent=2)
+            json.dump(self.plan if plan is None else plan, f, indent=4)
         print(f'\nSaved plan to "{filename}"')
