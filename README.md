@@ -2,7 +2,9 @@
 **temporary title, clear lack of imagination**
 
 ## What is it?
-Sparkobs is a lightweight package to create observation plans for various instruments. It is inspired by [gwemopt](https://github.com/skyportal/gwemopt) and some of [SkyPortal](https://github.com/skyportal/skyportal)'s code.
+Sparkobs is a lightweight package to create observation plans for various instruments, but faster than the speed of light (I might be lying about the speed of light part).
+
+It is inspired by [gwemopt](https://github.com/skyportal/gwemopt) and some of [SkyPortal](https://github.com/skyportal/skyportal)'s code.
 
 ## How to install it?
 
