@@ -4,3 +4,4 @@ elevation = 1870.0
 diameter = 1.2
 fields = 'data/fields_ztf.joblib'
 primary_limit = 881
+dec_range = [-30, 90]

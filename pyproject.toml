@@ -4,7 +4,7 @@ authors = [
     {name="Theophile du Laz", email="tdulaz@gmail.com"},
 ]
 version = "0.0.0"
-description = "A package to schedule observations of multi-messenger events, but faster than the speed of light (i might be lying about the speed of light part)"
+description = "A package to schedule observations of multi-messenger events, but faster than the speed of light (I might be lying about the speed of light part)"
 readme = "README.md"
 dependencies = [
   'astropy >= 5.2.2',

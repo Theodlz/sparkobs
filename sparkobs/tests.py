@@ -1,62 +1,68 @@
 import os
 
-import joblib
-import pytest
+import toml
 from astropy import time as ap_time
 
 from sparkobs.telescope import Telescope
 from sparkobs.utils import skymap_from_url
 
-skymap_url = 'https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit'
-level = 0.9
-
 start_date = ap_time.Time('2023-04-30T01:47:19.219789', format='isot', scale='utc')
 end_date = ap_time.Time('2023-05-01T01:47:19.219789', format='isot', scale='utc')
 
-fields = joblib.load('data/fields_ztf.joblib')
-
+config = toml.load('config/ztf.toml')
 config = {
-    'lon': -116.8361,
-    'lat': 33.3634,
-    'elevation': 1870.0,
-    'diameter': 1.2,
-    'fields': fields,
+    **config,
     'max_airmass': 2.5,
     'min_moon_angle': 30,
     'min_time_interval': 30,
-    'start_date': start_date,
-    'end_date': end_date,
     'filters': ['g', 'r', 'g'],
     'exposure_time' : 300,
-    'primary_limit': 881,
-}
+} # config for ZTF common to all tests
 
-skymap = skymap_from_url(skymap_url, level)
+def test_LVC():
+    # a gw localization from GraceDB a little over 1000 sq deg
+    url = 'https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1'
+    skymap = skymap_from_url(url=url, level=0.95)
 
-def test_create_telescope():
-    try:
-        Telescope(config)
-    except Exception as e:
-        pytest.fail(f'Failed to create telescope: {e}')
+    gw_config = {
+        **config,
+        'start_date': ap_time.Time('2023-05-02T02:35:46.000000', format='isot', scale='utc'),
+        'end_date': ap_time.Time('2023-05-03T02:35:46.000000', format='isot', scale='utc'),
+    }
 
-def test_compute_observability():
-    telescope = Telescope(config)
+    telescope = Telescope(gw_config)
+    telescope.compute_observability(skymap)
+    assert len(telescope.observable_fields) == 101
+
+    telescope.schedule()
+    assert len(telescope.plan['planned_observations']) == 89
+
+    telescope.save_plan('plans/test.json')
+    assert os.path.exists('plans/test.json')
+    os.remove('plans/test.json')
+
+def test_Fermi():
+    # a glg localization from Fermi GBM that's under 500 sq deg
+    url = "https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit"
+    skymap = skymap_from_url(url=url, level=0.95)
+
+    fermi_config = {
+        **config,
+        'start_date': ap_time.Time('2023-04-30T07:47:19.000000', format='isot', scale='utc'),
+        'end_date': ap_time.Time('2023-05-01T07:47:19.000000', format='isot', scale='utc'),
+    }
+
+    telescope = Telescope(fermi_config)
     telescope.compute_observability(skymap)
     assert len(telescope.observable_fields) == 24
 
-def test_schedule():
-    telescope = Telescope(config)
-    telescope.compute_observability(skymap)
     telescope.schedule()
-    assert len(telescope.plan) == 41
+    assert len(telescope.plan['planned_observations']) == 46
 
-def test_save_plan():
-    telescope = Telescope(config)
-    telescope.compute_observability(skymap)
-    telescope.schedule()
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')
     os.remove('plans/test.json')
 
 if __name__ == '__main__':
-    test_save_plan()
+    test_LVC()
+    test_Fermi()

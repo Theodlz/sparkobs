@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import warnings
@@ -65,14 +66,16 @@ class Telescope:
         self.min_moon_angle = config['min_moon_angle']
         self.start_date = config['start_date']
         self.end_date = config['end_date']
-        self.min_time_interval = config['min_time_interval']
+        self.min_time_interval = config['min_time_interval'] * 60
         self.filters = config["filters"]
         self.exposure_time = config["exposure_time"]
         self.primary_limit = config['primary_limit']
         self.moon_dt = None
+        self.dec_range = config.get('dec_range', None)
 
         self.adjust_dates()
         self.compute_deltaT()
+
 
     @property
     def observer(self):
@@ -275,8 +278,8 @@ class Telescope:
 
         print()
         print('-' * 80)
-        print(f'Adjusted start date: {self.start_date.iso}')
-        print(f'Adjusted end date: {self.end_date.iso}')
+        print(f'Adjusted start date: {self.start_date.isot}')
+        print(f'Adjusted end date: {self.end_date.isot}')
         print('-' * 80)
         print()
 
@@ -296,16 +299,17 @@ class Telescope:
 
     def compute_deltaT(self):
         """Compute the deltaT array, which is the time interval between each observation of different fields."""
-        deltaT = np.arange(0, (self.end_date - self.start_date).sec, self.min_time_interval * 60)
+        deltaT = np.arange(0, (self.end_date - self.start_date).sec, self.exposure_time)
         self.deltaT = np.asarray([self.start_date + timedelta(seconds=delta) for delta in deltaT])
+        self.deltaTjd = np.asarray([t.jd for t in self.deltaT])
 
     def compute_fields_airmasses(self):
         """Compute the airmass of each field at each deltaT."""
-        for field_id in tqdm.tqdm(self.fields.keys(), desc='Computing airmasses'):
+        for field_id in tqdm.tqdm(self.observable_fields.keys(), desc='Computing airmasses'):
             # we compute the airmass at the start and end of one exposure to see if the field is observable at least once at each deltaT
             airmasses_start = self.airmass(field_id, self.deltaT)
             airmasses_end = self.airmass(field_id, self.deltaT + timedelta(seconds=self.exposure_time))
-            self.fields[field_id]['airmasses'] = np.maximum(airmasses_start, airmasses_end)
+            self.observable_fields[field_id]['airmasses'] = np.maximum(airmasses_start, airmasses_end)
 
     def compute_fields_moon_angles(self):
         """Compute the moon angle of each field at each deltaT."""
@@ -314,13 +318,27 @@ class Telescope:
             moon_angles_end = self.moon_angle(field_id, self.deltaT + timedelta(seconds=self.exposure_time))
             self.observable_fields[field_id]['moon_angles'] = np.minimum(moon_angles_start, moon_angles_end)
 
-    def select_observable_fields(self):
+    def update_observable_fields(self, method):
         """Select fields that are observable at least once at each deltaT, i.e. fields with airmasses < max_airmass at least once."""
         observable_fields = {}
-        for field_id in tqdm.tqdm(self.fields.keys(), desc='Selecting observable fields'):
-            field = self.fields[field_id]
-            if np.any(field['airmasses'] < self.max_airmass):
-                observable_fields[field_id] = field 
+        if method == 'airmasses':
+            for field_id in tqdm.tqdm(self.observable_fields.keys(), desc='Selecting observable fields'):
+                field = self.observable_fields[field_id]
+                if np.any(field['airmasses'] < self.max_airmass):
+                    observable_fields[field_id] = field
+        elif method == 'moon_angles':
+            for field_id in tqdm.tqdm(self.observable_fields.keys(), desc='Selecting observable fields'):
+                field = self.observable_fields[field_id]
+                if np.any(field['moon_angles'] > self.min_moon_angle):
+                    observable_fields[field_id] = field
+        elif method == 'dec_range':
+            if self.dec_range is None:
+                self.observable_fields = self.fields if self.observable_fields in [None, {}] else self.observable_fields
+                return
+            for field_id in tqdm.tqdm(self.observable_fields.keys(), desc='Selecting observable fields'):
+                field = self.observable_fields[field_id]
+                if field['dec'] >= self.dec_range[0] and field['dec'] <= self.dec_range[1]:
+                    observable_fields[field_id] = field
         self.observable_fields = observable_fields
 
     def drop_tiles_from_observable_fields(self):
@@ -332,20 +350,27 @@ class Telescope:
     def compute_observability(self, skymap):
         """Compute the observability of each field at each deltaT + exposure_time (i.e. the end of at least one observation)
         and remove fields that are never observable at any deltaT + exposure_time, and without any overlap with the skymap."""
+        self.observable_fields = copy.deepcopy(self.fields)
 
-        self.compute_fields_airmasses()
-
-        print()
-        self.select_observable_fields()
+        self.update_observable_fields('dec_range')
 
         print()
         self.compute_fields_skymap_overlap(skymap)
 
         print()
-        self.compute_field_probdensity(skymap)
+        self.compute_fields_airmasses()
+
+        print()
+        self.update_observable_fields('airmasses')
 
         print()
         self.compute_fields_moon_angles()
+
+        print()
+        self.update_observable_fields('moon_angles')
+
+        print()
+        self.compute_field_probdensity(skymap)
 
         self.drop_tiles_from_observable_fields()
     
@@ -376,7 +401,7 @@ class Telescope:
             for tile in self.observable_fields[field_id]["tiles"]:
                 tiles.append((field_id, tile[0], tile[1]))
 
-        with ProgressBar(total=len(tiles)*len(ranges), desc='Computing fields probdensity') as progress:
+        with ProgressBar(total=int(len(tiles)*len(ranges)), desc='Computing fields probdensity') as progress:
             new_tiles = compute_tiles_probdensity(tiles, ranges, probdensities, progress)
 
         # reformat the tiles back to a dictionary of fields
@@ -390,8 +415,14 @@ class Telescope:
 
         self.observable_fields = fields
 
+    def idx_closest_time(self, time):
+        """Return the index of the closest time in the deltaT array."""
+        return np.argmin(np.abs(self.deltaTjd - time))
+
     @timeit
-    def schedule(self):
+    def schedule(self, method='greedy'): #TODO: I'm just experimenting with this to see what can be done and how
+        # this is not a good way to schedule observations, it's clearly suboptimal so far. I want to have a look at
+        # sear, greedy slew and weighted to see if I can get something better
         """Schedule observations of the fields based on their observability and probdensity (greedy algorithm).
         Fields from the primary grid are scheduled first, then fields from the secondary grid."""
         # rank the observable fields by probdensity
@@ -409,42 +440,38 @@ class Telescope:
                 secondary_fields[field_id] = field
         fields = {**primary_fields, **secondary_fields}
 
-        max_exp = len(self.filters)
+        max_obs = len(self.filters)
         # schedule the fields
         plan = []
-        for i, t in enumerate(self.deltaT):
-            for field_id in fields.keys():
-                # if this plan hasnt been scheduled yet
-                if field_id in [p["field_id"] for p in plan]:
-                    continue
-                field = fields[field_id]
-                if field['airmasses'][i] < self.max_airmass and field['moon_angles'][i] > self.min_moon_angle:
-                    # we know that its under airmass and above moon angle at this timestep for one exposure
-                    # see how many exposures we can do up to max = len(self.filter)
-                    # while keeping the airmass under max_airmass and the moon angle above min_moon_angle
-                    # we start at max and go down to 2
-                    filters = []
-                    for n_exp in range(max_exp, 1, -1):
-                        if i + n_exp > len(self.deltaT):
-                            continue
-                        dt = self.deltaT[i] + timedelta(seconds=self.exposure_time * (n_exp - 1))
-                        airmass = self.airmass(field_id, dt)
-                        moon_angle = self.moon_angle(field_id, dt)
-                        if airmass < self.max_airmass and moon_angle > self.min_moon_angle:
-                            filters = self.filters[:n_exp]
-                            break
-                    
-                    for i in range(len(filters)):
+        # scheduled will be a dict with key = field_id and value is a dict with last_obs_time and nb_obs
+        scheduled_lookup = {field_id: {"last_obs_time": (self.start_date - timedelta(self.min_time_interval)), "nb_obs": 0} for field_id in fields.keys()}
+        if method == 'greedy':
+            for i, t in enumerate(self.deltaT):
+                for field_id in fields.keys():
+                    scheduled = scheduled_lookup[field_id]
+                    if scheduled['nb_obs'] < max_obs and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd:
                         plan.append({
-                            "obstime": (t+timedelta(seconds=self.exposure_time*i)).iso,
+                            "obstime": (t+timedelta(seconds=self.min_time_interval*i)).isot,
                             "field_id": field_id,
-                            "filt": filters[i],
+                            "filt": self.filters[scheduled_lookup[field_id]['nb_obs']],
                             "exposure_time": self.exposure_time,
                             "probdensity": field['probdensity'],
                         })
-                    break
+                        scheduled_lookup[field_id]['last_obs_time'] = t
+                        scheduled_lookup[field_id]['nb_obs'] += 1
+                        break
 
-        self.plan = plan
+            start_time = ap_time.Time(plan[0]['obstime'], format='isot')
+            end_time = ap_time.Time(plan[-1]['obstime'], format='isot') + timedelta(seconds=self.exposure_time)
+
+            self.plan = {
+                'nb_observations': len(plan),
+                'nb_fields': len(set([obs['field_id'] for obs in plan])),
+                'validity_window_start': start_time.isot,
+                'validity_window_end': end_time.isot,
+                'total_time': (end_time - start_time).sec,
+                'planned_observations': plan,
+            }
 
     def save_plan(self, filename, plan=None):
         """Save the plan to a json file."""
