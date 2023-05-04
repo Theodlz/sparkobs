@@ -9,3 +9,5 @@ plans
 .pytest_cache/
 
 env/
+
+build/

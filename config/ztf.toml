@@ -1,0 +1,6 @@
+lon = -116.8361
+lat = 33.8121
+elevation = 1870.0
+diameter = 1.2
+fields = 'data/fields_ztf.joblib'
+primary_limit = 881
