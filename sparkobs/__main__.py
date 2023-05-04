@@ -21,6 +21,7 @@ parser.add_argument('--end_date', type=str, default=None, help='end date of the 
 parser.add_argument('--min_time_interval', type=int, default=30, help='minimum time interval between observations in minutes')
 parser.add_argument('--max_airmass', type=float, default=2, help='maximum airmass')
 parser.add_argument('--min_moon_angle', type=float, default=10, help='minimum angle between the Moon and the field in degrees')
+parser.add_argument('--min_galactic_latitude', type=float, default=10, help='minimum galactic latitude in degrees')
 args = parser.parse_args()
 
 # load the telescope configuration
@@ -39,6 +40,7 @@ config['exposure_time'] = args.exposure_time
 config['filters'] = args.filters
 config['max_airmass'] = args.max_airmass
 config['min_moon_angle'] = args.min_moon_angle
+config['min_galactic_latitude'] = args.min_galactic_latitude
 config['min_time_interval'] = args.min_time_interval
 
 if any([args.start_date is not None, args.end_date is not None]) and not all([args.start_date is not None, args.end_date is not None]):

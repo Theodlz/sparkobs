@@ -37,7 +37,7 @@ python -m sparkobs --skymap_url="https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gb
 
 or on a larger localization, for example:
 ```bash
-python -m sparkobs --telescope="config/ztf.toml" --skymap_url="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=095
+python -m sparkobs --telescope="config/ztf.toml" --skymap_url="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=0.95
 ```
 
 Also, you can run the integration tests with

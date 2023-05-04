@@ -14,6 +14,7 @@ config = {
     **config,
     'max_airmass': 2.5,
     'min_moon_angle': 30,
+    'min_galactic_latitude': 10,
     'min_time_interval': 30,
     'filters': ['g', 'r', 'g'],
     'exposure_time' : 300,
@@ -54,7 +55,7 @@ def test_Fermi():
 
     telescope = Telescope(fermi_config)
     telescope.compute_observability(skymap)
-    assert len(telescope.observable_fields) == 24
+    assert len(telescope.observable_fields) == 31
 
     telescope.schedule()
     assert len(telescope.plan['planned_observations']) == 46

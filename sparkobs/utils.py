@@ -14,7 +14,7 @@ from astropy.coordinates import ICRS, SkyCoord
 from astropy.table import Table
 from astropy_healpix import HEALPix, uniq_to_level_ipix
 from mocpy import MOC
-from numba import njit
+from numba import prange, jit
 
 LEVEL = MOC.MAX_ORDER
 hp_29_area = hp.nside2pixarea(2**29)
@@ -32,7 +32,7 @@ def timeit(func):
 
     return wrapper
 
-@njit
+@jit(nogil=True, nopython=True, fastmath=True)
 def is_overlap(a,b):
     """
     Check if 2 ranges overlap
@@ -52,7 +52,7 @@ def is_overlap(a,b):
 
     return (a[0] <= b[1]) and (b[0] <= a[1])
 
-@njit
+@jit(nogil=True, nopython=True, fastmath=True)
 def overlap_value(a,b):
     """
     Compute the "pixel area" (nb of pixels) of the overlap between 2 ranges
@@ -75,7 +75,7 @@ def overlap_value(a,b):
     else:
         return (min(a[1], b[1]) - max(a[0], b[0]))
     
-@njit
+@jit(nogil=True, nopython=True, fastmath=True, parallel=True)
 def compute_tiles_probdensity(tiles, ranges, probdensities, progress_proxy):
     """
     Compute the probability density of each tile by computing the overlap between the tile and the skymap
@@ -96,11 +96,11 @@ def compute_tiles_probdensity(tiles, ranges, probdensities, progress_proxy):
     """
     new_tiles = []
     for i in range(len(tiles)):
-        probs = [0]
-        for j in range(len(ranges)):
-            probs.append(probdensities[j] * overlap_value((tiles[i][1], tiles[i][2]), ranges[j]))
-            progress_proxy.update(1)
-        new_tiles.append((tiles[i][0], tiles[i][1], tiles[i][2], sum(probs) * hp_29_area))
+        probs = np.zeros(len(ranges))
+        for j in prange(len(ranges)):
+            probs[j] = probdensities[j] * overlap_value((tiles[i][1], tiles[i][2]), ranges[j])
+        new_tiles.append((tiles[i][0], tiles[i][1], tiles[i][2], probs.sum() * hp_29_area))
+        progress_proxy.update(1)
 
     return new_tiles
 

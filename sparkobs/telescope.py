@@ -38,6 +38,8 @@ class Telescope:
         Maximum airmass for the fields to be observable
     min_moon_angle : float
         Minimum angle between the moon and the fields (in degrees) to be observable
+    min_galactic_latitude : float
+        Minimum galactic latitude (in degrees) for the fields to be observable
     min_time_interval : float
         Minimum time interval (in minutes) between observations of different fields
     start_date : `astropy.time.Time`
@@ -64,6 +66,7 @@ class Telescope:
             self.fields = joblib.load(self.fields)
         self.max_airmass = config['max_airmass']
         self.min_moon_angle = config['min_moon_angle']
+        self.min_galactic_latitude = config['min_galactic_latitude']
         self.start_date = config['start_date']
         self.end_date = config['end_date']
         self.min_time_interval = config['min_time_interval'] * 60
@@ -225,15 +228,15 @@ class Telescope:
 
         Parameters
         ----------
+        field_id : str
+            The field id
         time : `astropy.time.Time` or list of astropy.time.Time`
             The time or times at which to calculate the angle
-        min_angle : scalar, Numeric
-            The minimum angle between the field and the moon
 
         Returns
         -------
         angle : ndarray
-           The angle between the field and the moon at the requested times
+           The angle(s) between the field and the moon at the requested times
         """
         output_shape = time.shape
         time = np.atleast_1d(time)
@@ -248,6 +251,34 @@ class Telescope:
             angles.append(angle)
         angles = np.asarray(angles).reshape(output_shape)
         return angles
+    
+    def galactic_plane(self, field_id, time):
+        """Return the angle between the field and the galactic plane at a given time.
+
+        Parameters
+        ----------
+        field_id : str
+            The field id
+        time : `astropy.time.Time` or list of astropy.time.Time`
+            The time or times at which to calculate the angle
+
+        Returns
+        -------
+        angle : ndarray
+           The angle(s) between the field and the galactic plane at the requested times
+        """
+        output_shape = time.shape
+        time = np.atleast_1d(time)
+        target = self.target(field_id)
+        angles = []
+
+        for i, t in enumerate(time):
+            angle = target.coord.galactic.b.deg
+            angles.append(angle)
+        angles = np.asarray(angles).reshape(output_shape)
+        return angles
+
+        
 
     def adjust_dates(self):
         """Adjust the start and end dates to the next evening and morning
@@ -346,6 +377,11 @@ class Telescope:
         for field_id in self.observable_fields.keys():
             self.observable_fields[field_id].pop('tiles', None)
 
+    def add_tiles_to_observable_fields(self):
+        """Add the tiles to the observable fields once they are needed."""
+        for field_id in self.observable_fields.keys():
+            self.observable_fields[field_id]['tiles'] = self.fields[field_id]['tiles']
+
     @timeit
     def compute_observability(self, skymap):
         """Compute the observability of each field at each deltaT + exposure_time (i.e. the end of at least one observation)
@@ -363,15 +399,16 @@ class Telescope:
         print()
         self.update_observable_fields('airmasses')
 
-        print()
-        self.compute_fields_moon_angles()
+        # print()
+        # self.compute_fields_moon_angles()
 
-        print()
-        self.update_observable_fields('moon_angles')
+        # print()
+        # self.update_observable_fields('moon_angles')
 
         print()
         self.compute_field_probdensity(skymap)
 
+        # we drop the fields until we are done with computing the observability to save memory
         self.drop_tiles_from_observable_fields()
     
     def overlapping_field_tiles(self,field,moc):
@@ -402,7 +439,7 @@ class Telescope:
                 tiles.append((field_id, tile[0], tile[1]))
 
         new_tiles = None
-        with ProgressBar(total=int(len(tiles)*len(ranges)), desc='Computing fields probdensity') as progress:
+        with ProgressBar(total=int(len(tiles)), desc='Computing fields probdensity') as progress:
             new_tiles = compute_tiles_probdensity(tiles, ranges, probdensities, progress)
 
         # reformat the tiles back to a dictionary of fields
@@ -452,7 +489,7 @@ class Telescope:
                     scheduled = scheduled_lookup[field_id]
                     if (
                         scheduled['nb_obs'] < max_obs and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd
-                        and fields[field_id]['airmasses'][i] < self.max_airmass and fields[field_id]['moon_angles'][i] > self.min_moon_angle
+                        and fields[field_id]['airmasses'][i] < self.max_airmass and self.moon_angle(field_id, t) > self.min_moon_angle and self.galactic_plane(field_id, t) > self.min_galactic_latitude
                         ):
                         plan.append({
                             "obstime": (t+timedelta(seconds=self.min_time_interval*i)).isot,
