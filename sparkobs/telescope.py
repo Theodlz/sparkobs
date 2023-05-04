@@ -430,10 +430,6 @@ class Telescope:
         fields = self.observable_fields
         fields = {k: v for k, v in sorted(fields.items(), key=lambda item: item[1]['probdensity'], reverse=True)}
 
-        #print the first 2 fields
-        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[0]]['probdensity']}")
-        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[1]]['probdensity']}")
-
         # rerank based on whether the field is in the primary or secondary grid using self.primary_limit
         primary_fields = {}
         secondary_fields = {}
@@ -444,10 +440,6 @@ class Telescope:
             else:
                 secondary_fields[field_id] = field
         fields = {**primary_fields, **secondary_fields}
-
-        #print the first 2 fields
-        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[0]]['probdensity']}")
-        print(f"Field {list(fields.keys())[0]}: {fields[list(fields.keys())[1]]['probdensity']}")
 
         max_obs = len(self.filters)
         # schedule the fields
@@ -475,10 +467,6 @@ class Telescope:
 
             start_time = ap_time.Time(plan[0]['obstime'], format='isot')
             end_time = ap_time.Time(plan[-1]['obstime'], format='isot') + timedelta(seconds=self.exposure_time)
-
-            # show the first 2 observations
-            print(f"Observation {plan[0]['obstime']}: {plan[0]['field_id']} with probdensity {plan[0]['probdensity']}")
-            print(f"Observation {plan[1]['obstime']}: {plan[1]['field_id']} with probdensity {plan[1]['probdensity']}")
 
             self.plan = {
                 'nb_observations': len(plan),
