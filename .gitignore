@@ -5,3 +5,7 @@ sparkobs.egg-info
 plans
 
 .DS_Store
+
+.pytest_cache/
+
+env/
