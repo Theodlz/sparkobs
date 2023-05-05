@@ -478,17 +478,24 @@ class Telescope:
                 secondary_fields[field_id] = field
         fields = {**primary_fields, **secondary_fields}
 
-        max_obs = len(self.filters)
+        max_total_obs = len(self.deltaT)
+        max_obs_per_filter = max_total_obs // len(self.filters)
+        max_obs_per_field = len(self.filters)
         # schedule the fields
         plan = []
         # scheduled will be a dict with key = field_id and value is a dict with last_obs_time and nb_obs
         scheduled_lookup = {field_id: {"last_obs_time": (self.start_date - timedelta(self.min_time_interval)), "nb_obs": 0} for field_id in fields.keys()}
         if method == 'greedy':
+            current_filter_id = 0
+            nb_obs_per_filter = 0
             for i, t in enumerate(self.deltaT):
+                if nb_obs_per_filter >= max_obs_per_filter:
+                    current_filter_id += 1
+                    nb_obs_per_filter = 0
                 for field_id in fields.keys():
                     scheduled = scheduled_lookup[field_id]
                     if (
-                        scheduled['nb_obs'] < max_obs and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd
+                        scheduled['nb_obs'] < max_obs_per_field and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd and scheduled['nb_obs'] <= current_filter_id
                         and fields[field_id]['airmasses'][i] < self.max_airmass and self.moon_angle(field_id, t) > self.min_moon_angle and self.galactic_plane(field_id, t) > self.min_galactic_latitude
                         ):
                         plan.append({
@@ -500,6 +507,7 @@ class Telescope:
                         })
                         scheduled_lookup[field_id]['last_obs_time'] = t
                         scheduled_lookup[field_id]['nb_obs'] += 1
+                        nb_obs_per_filter += 1
                         break
 
             start_time = ap_time.Time(plan[0]['obstime'], format='isot')
