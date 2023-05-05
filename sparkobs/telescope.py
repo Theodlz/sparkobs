@@ -490,8 +490,12 @@ class Telescope:
             nb_obs_per_filter = 0
             for i, t in enumerate(self.deltaT):
                 if nb_obs_per_filter >= max_obs_per_filter:
-                    current_filter_id += 1
-                    nb_obs_per_filter = 0
+                    if current_filter_id < len(self.filters) - 1:
+                        current_filter_id += 1
+                        nb_obs_per_filter = 0
+                    else: #reset the filter id to 0
+                        current_filter_id = 0
+                        nb_obs_per_filter = 0
                 for field_id in fields.keys():
                     scheduled = scheduled_lookup[field_id]
                     if (
