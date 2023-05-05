@@ -399,6 +399,9 @@ class Telescope:
         print()
         self.update_observable_fields('airmasses')
 
+        print()
+        self.adjust_deltaT()
+
         # print()
         # self.compute_fields_moon_angles()
 
@@ -456,6 +459,34 @@ class Telescope:
     def idx_closest_time(self, time):
         """Return the index of the closest time in the deltaT array."""
         return np.argmin(np.abs(self.deltaTjd - time))
+    
+    def adjust_deltaT(self):
+        # we look at the first idx of each field airmasses array that is below max_airmass
+        # we do this for each field to determine the first time at least one field is observable
+
+        min_idx = len(self.deltaT)
+        max_idx = 0
+        for i, field_id in enumerate(self.observable_fields.keys()):
+            field = self.observable_fields[field_id]
+            indexes = np.argwhere(field['airmasses'] < self.max_airmass)
+            min_idx = indexes[0][0] if indexes[0] < min_idx else min_idx
+            max_idx = indexes[-1][0] if indexes[-1] > max_idx else max_idx
+
+        # we adjust the deltaT array to start at the first time at least one field is observable and end at the last time at least one field is observable
+        self.deltaT = self.deltaT[min_idx:max_idx]
+        self.deltaTjd = self.deltaTjd[min_idx:max_idx]
+
+        # we also adjust the airmasses and moon_angles arrays of each field
+        for field_id in self.observable_fields.keys():
+            field = self.observable_fields[field_id]
+            field['airmasses'] = field['airmasses'][min_idx:max_idx]
+            if 'moon_angles' in field:
+                field['moon_angles'] = field['moon_angles'][min_idx:max_idx]
+
+        # we also adjust the start_date and end_date
+        self.start_date = self.deltaT[0]
+        self.end_date = self.deltaT[-1] + timedelta(seconds=self.exposure_time)
+
 
     @timeit
     def schedule(self, method='greedy'): #TODO: I'm just experimenting with this to see what can be done and how
@@ -479,7 +510,7 @@ class Telescope:
         fields = {**primary_fields, **secondary_fields}
 
         max_total_obs = len(self.deltaT)
-        max_obs_per_filter = max_total_obs // len(self.filters)
+        max_obs_per_filter = max_total_obs // len(self.filters) if max_total_obs // len(self.filters) < len(fields) else len(fields)
         max_obs_per_field = len(self.filters)
         # schedule the fields
         plan = []
@@ -488,34 +519,38 @@ class Telescope:
         if method == 'greedy':
             current_filter_id = 0
             nb_obs_per_filter = 0
+            last_filter_change = self.start_date
+            last_observation = self.start_date
             for i, t in enumerate(self.deltaT):
-                if nb_obs_per_filter >= max_obs_per_filter:
+                if nb_obs_per_filter >= max_obs_per_filter and t > last_filter_change + timedelta(seconds=self.min_time_interval):
                     if current_filter_id < len(self.filters) - 1:
                         current_filter_id += 1
                         nb_obs_per_filter = 0
                     else: #reset the filter id to 0
                         current_filter_id = 0
                         nb_obs_per_filter = 0
+                    last_filter_change = t
                 for field_id in fields.keys():
                     scheduled = scheduled_lookup[field_id]
                     if (
-                        scheduled['nb_obs'] < max_obs_per_field and t.jd > (scheduled['last_obs_time'] + timedelta(seconds=self.min_time_interval)).jd and scheduled['nb_obs'] <= current_filter_id
+                        scheduled['nb_obs'] < max_obs_per_field and scheduled['nb_obs'] <= current_filter_id and scheduled['last_obs_time'] < last_filter_change
                         and fields[field_id]['airmasses'][i] < self.max_airmass and self.moon_angle(field_id, t) > self.min_moon_angle and self.galactic_plane(field_id, t) > self.min_galactic_latitude
                         ):
                         plan.append({
-                            "obstime": (t+timedelta(seconds=self.min_time_interval*i)).isot,
+                            "obstime": t.isot,
                             "field_id": field_id,
-                            "filt": self.filters[scheduled_lookup[field_id]['nb_obs']],
+                            "filt": self.filters[current_filter_id],
                             "exposure_time": self.exposure_time,
                             "probdensity": fields[field_id]['probdensity'],
                         })
                         scheduled_lookup[field_id]['last_obs_time'] = t
                         scheduled_lookup[field_id]['nb_obs'] += 1
                         nb_obs_per_filter += 1
+                        last_observation = t
                         break
 
             start_time = ap_time.Time(plan[0]['obstime'], format='isot')
-            end_time = ap_time.Time(plan[-1]['obstime'], format='isot') + timedelta(seconds=self.exposure_time)
+            end_time = last_observation + timedelta(seconds=self.exposure_time)
 
             self.plan = {
                 'nb_observations': len(plan),
