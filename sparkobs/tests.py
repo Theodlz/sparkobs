@@ -20,6 +20,8 @@ config = {
     'exposure_time' : 300,
 } # config for ZTF common to all tests
 
+# (note that we didnt ask to use the secondary grid in any of these tests)
+
 def test_LVC():
     # a gw localization from GraceDB a little over 1000 sq deg
     url = 'https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1'
@@ -33,10 +35,10 @@ def test_LVC():
 
     telescope = Telescope(gw_config)
     telescope.compute_observability(skymap)
-    assert len(telescope.observable_fields) == 101
+    assert len(telescope.observable_fields) == 49
 
     telescope.schedule()
-    assert len(telescope.plan['planned_observations']) == 87
+    assert len(telescope.plan['planned_observations']) == 78
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')
@@ -55,10 +57,10 @@ def test_Fermi():
 
     telescope = Telescope(fermi_config)
     telescope.compute_observability(skymap)
-    assert len(telescope.observable_fields) == 31
+    assert len(telescope.observable_fields) == 17
 
     telescope.schedule()
-    assert len(telescope.plan['planned_observations']) == 45
+    assert len(telescope.plan['planned_observations']) == 39
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')

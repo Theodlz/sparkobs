@@ -1,13 +1,18 @@
 import argparse
 import os
+from datetime import datetime, timedelta
 
 import joblib
-from astropy import time as ap_time
 import toml
-from datetime import datetime, timedelta
+from astropy import time as ap_time
 
 from sparkobs.telescope import Telescope
 from sparkobs.utils import skymap_from_url
+
+def boolean_string(s):
+    if s not in {'False', 'True'}:
+        raise ValueError('Not a valid boolean string')
+    return s == 'True'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--skymap_url', type=str, help='URL of the skymap')
@@ -22,11 +27,16 @@ parser.add_argument('--min_time_interval', type=int, default=30, help='minimum t
 parser.add_argument('--max_airmass', type=float, default=2.5, help='maximum airmass')
 parser.add_argument('--min_moon_angle', type=float, default=10, help='minimum angle between the Moon and the field in degrees')
 parser.add_argument('--min_galactic_latitude', type=float, default=10, help='minimum galactic latitude in degrees')
-parser.add_argument('--use_secondary', type=float, default=True, help='whether or not to observe the secondary grid')
+parser.add_argument('--use_primary', type=boolean_string, default=True, help='whether or not to observe the primary grid')
+parser.add_argument('--use_secondary', type=bool, default=False, help='whether or not to observe the secondary grid')
 args = parser.parse_args()
 
 # load the telescope configuration
 config = {}
+
+# if both use_primary and use_secondary are False, raise an error
+if not args.use_primary and not args.use_secondary:
+    raise ValueError('Please set at least one of use_primary and use_secondary to True')
 
 if args.telescope is None or not os.path.exists(args.telescope):
     raise ValueError('Please provide a valid path to the telescope configuration file')
@@ -43,18 +53,21 @@ config['max_airmass'] = args.max_airmass
 config['min_moon_angle'] = args.min_moon_angle
 config['min_galactic_latitude'] = args.min_galactic_latitude
 config['min_time_interval'] = args.min_time_interval
+config['use_primary'] = args.use_primary
 config['use_secondary'] = args.use_secondary
 
-if any([args.start_date is not None, args.end_date is not None]) and not all([args.start_date is not None, args.end_date is not None]):
-    raise ValueError('Please provide both start_date and end_date, or neither')
+if args.end_date is not None and args.start_date is None:
+    raise ValueError('Please provide a start date if you want to provide an end date')
 
 if args.start_date is None:
     config['start_date'] = ap_time.Time(datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f"), format='isot', scale='utc')
 else:
     config['start_date'] = ap_time.Time(args.start_date, format='iso', scale='utc')
 
-if args.end_date is None:
+if args.end_date is None and args.start_date is None:
     config['end_date'] = ap_time.Time((datetime.utcnow()+ timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.%f"), format='isot', scale='utc')
+elif args.end_date is None and args.start_date is not None:
+    config['end_date'] = config['start_date'] + timedelta(days=1)
 else:
     config['end_date'] = ap_time.Time(args.end_date, format='iso', scale='utc')
 

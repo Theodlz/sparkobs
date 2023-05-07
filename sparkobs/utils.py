@@ -14,10 +14,11 @@ from astropy.coordinates import ICRS, SkyCoord
 from astropy.table import Table
 from astropy_healpix import HEALPix, uniq_to_level_ipix
 from mocpy import MOC
-from numba import prange, jit
+from numba import jit, prange
 
-LEVEL = MOC.MAX_ORDER
-hp_29_area = hp.nside2pixarea(2**29)
+from sparkobs.constants import LEVEL, PIXEL_AREA
+
+hp_29_area = float(PIXEL_AREA)
 
 def timeit(func):
     """Decorator to time a function execution."""
@@ -102,9 +103,12 @@ def compute_tiles_probdensity(tiles, ranges, probdensities, progress_proxy):
     new_tiles = []
     for i in range(len(tiles)):
         probs = np.zeros(len(ranges))
+        pixel_areas = np.zeros(len(ranges))
         for j in prange(len(ranges)):
-            probs[j] = probdensities[j] * overlap_value((tiles[i][1], tiles[i][2]), ranges[j])
-        new_tiles.append((tiles[i][0], tiles[i][1], tiles[i][2], probs.sum() * hp_29_area))
+            value = overlap_value((tiles[i][1], tiles[i][2]), ranges[j])
+            probs[j] = probdensities[j] * value
+            pixel_areas[j] = value
+        new_tiles.append((tiles[i][0], tiles[i][1], tiles[i][2], probs.sum() * hp_29_area, pixel_areas.sum() * hp_29_area))
         progress_proxy.update(1)
 
     return new_tiles
