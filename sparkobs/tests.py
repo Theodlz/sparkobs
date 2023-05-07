@@ -36,7 +36,7 @@ def test_LVC():
     assert len(telescope.observable_fields) == 101
 
     telescope.schedule()
-    assert len(telescope.plan['planned_observations']) == 88
+    assert len(telescope.plan['planned_observations']) == 87
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')

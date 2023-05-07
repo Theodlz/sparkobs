@@ -33,6 +33,11 @@ def timeit(func):
     return wrapper
 
 @jit(nogil=True, nopython=True, fastmath=True)
+def angle(ra1, dec1, ra2, dec2):
+        """Return the angle between two points on the sphere."""
+        return np.arccos(np.sin(dec1) * np.sin(dec2) + np.cos(dec1) * np.cos(dec2) * np.cos(ra1 - ra2))
+
+@jit(nogil=True, nopython=True, fastmath=True)
 def is_overlap(a,b):
     """
     Check if 2 ranges overlap

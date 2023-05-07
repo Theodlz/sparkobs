@@ -11,7 +11,7 @@ from sparkobs.utils import skymap_from_url
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--skymap_url', type=str, help='URL of the skymap')
-parser.add_argument('--level', type=float, default=0.9, help='credible level of the skymap')
+parser.add_argument('--level', type=float, default=0.95, help='credible level of the skymap')
 parser.add_argument('--save_to', type=str, default=None, help='path to the plan file to save')
 parser.add_argument('--telescope', type=str, default=None, help='path to the telescope configuration file')
 parser.add_argument('--exposure_time', type=int, default=300, help='exposure time in seconds')
@@ -19,9 +19,10 @@ parser.add_argument('--filters', type=str, nargs='+', default=['g', 'r', 'g'], h
 parser.add_argument('--start_date', type=str, default=None, help='start date of the observation')
 parser.add_argument('--end_date', type=str, default=None, help='end date of the observation')
 parser.add_argument('--min_time_interval', type=int, default=30, help='minimum time interval between observations in minutes')
-parser.add_argument('--max_airmass', type=float, default=2, help='maximum airmass')
+parser.add_argument('--max_airmass', type=float, default=2.5, help='maximum airmass')
 parser.add_argument('--min_moon_angle', type=float, default=10, help='minimum angle between the Moon and the field in degrees')
 parser.add_argument('--min_galactic_latitude', type=float, default=10, help='minimum galactic latitude in degrees')
+parser.add_argument('--use_secondary', type=float, default=True, help='whether or not to observe the secondary grid')
 args = parser.parse_args()
 
 # load the telescope configuration
@@ -42,19 +43,20 @@ config['max_airmass'] = args.max_airmass
 config['min_moon_angle'] = args.min_moon_angle
 config['min_galactic_latitude'] = args.min_galactic_latitude
 config['min_time_interval'] = args.min_time_interval
+config['use_secondary'] = args.use_secondary
 
 if any([args.start_date is not None, args.end_date is not None]) and not all([args.start_date is not None, args.end_date is not None]):
     raise ValueError('Please provide both start_date and end_date, or neither')
 
 if args.start_date is None:
-    config['start_date'] = ap_time.Time(datetime.now(), format='datetime', scale='utc')
+    config['start_date'] = ap_time.Time(datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f"), format='isot', scale='utc')
 else:
-    config['start_date'] = ap_time.Time(args.start_date, format='isot', scale='utc')
+    config['start_date'] = ap_time.Time(args.start_date, format='iso', scale='utc')
 
 if args.end_date is None:
-    config['end_date'] = ap_time.Time(datetime.now() + timedelta(days=1), format='datetime', scale='utc')
+    config['end_date'] = ap_time.Time((datetime.utcnow()+ timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.%f"), format='isot', scale='utc')
 else:
-    config['end_date'] = ap_time.Time(args.end_date, format='isot', scale='utc')
+    config['end_date'] = ap_time.Time(args.end_date, format='iso', scale='utc')
 
 # load the skymap
 if args.skymap_url is None:

@@ -14,8 +14,10 @@ from astropy.coordinates import EarthLocation, SkyCoord, get_moon
 from mocpy import MOC
 from numba.typed import List as NumbaList
 from numba_progress import ProgressBar
+from copy import deepcopy
+from datetime import datetime
 
-from sparkobs.utils import compute_tiles_probdensity, timeit
+from sparkobs.utils import compute_tiles_probdensity, timeit, angle
 
 
 class Telescope:
@@ -66,10 +68,11 @@ class Telescope:
             self.fields = joblib.load(self.fields)
         self.max_airmass = config['max_airmass']
         self.min_moon_angle = config['min_moon_angle']
-        self.min_galactic_latitude = config['min_galactic_latitude']
+        self.min_galactic_plane = config['min_galactic_latitude']
         self.start_date = config['start_date']
         self.end_date = config['end_date']
         self.min_time_interval = config['min_time_interval'] * 60
+        self.use_secondary = config.get('use_secondary', True)
         self.filters = config["filters"]
         self.exposure_time = config["exposure_time"]
         self.primary_limit = config['primary_limit']
@@ -78,6 +81,7 @@ class Telescope:
 
         self.adjust_dates()
         self.compute_deltaT()
+        self.setup_grid()
 
 
     @property
@@ -334,6 +338,14 @@ class Telescope:
         self.deltaT = np.asarray([self.start_date + timedelta(seconds=delta) for delta in deltaT])
         self.deltaTjd = np.asarray([t.jd for t in self.deltaT])
 
+    def setup_grid(self):
+        if self.use_secondary == False and self.primary_limit:
+            fields = {}
+            for field_id in self.fields.keys():
+                if field_id < self.primary_limit:
+                    fields[field_id] = self.fields[field_id]
+                
+
     def compute_fields_airmasses(self):
         """Compute the airmass of each field at each deltaT."""
         for field_id in tqdm.tqdm(self.observable_fields.keys(), desc='Computing airmasses'):
@@ -413,6 +425,10 @@ class Telescope:
 
         # we drop the fields until we are done with computing the observability to save memory
         self.drop_tiles_from_observable_fields()
+
+        # add a score to each field set to the probdensity of the field
+        for field_id in self.observable_fields.keys():
+            self.observable_fields[field_id]['score'] = self.observable_fields[field_id]['probdensity']
     
     def overlapping_field_tiles(self,field,moc):
         """Return the overlapping field tiles between a field and a skymap's moc."""
@@ -483,11 +499,54 @@ class Telescope:
             if 'moon_angles' in field:
                 field['moon_angles'] = field['moon_angles'][min_idx:max_idx]
 
+        if self.deltaT.size == 0:
+            raise ValueError("No time left to observe the fields with the given max_airmass")
         # we also adjust the start_date and end_date
         self.start_date = self.deltaT[0]
         self.end_date = self.deltaT[-1] + timedelta(seconds=self.exposure_time)
 
+    def reorder(self, field_id: int, fields: dict, t: ap_time.Time, weights=[1, 1, 1]):
+        """Reorder the fields by distance to the given field."""
+        # remove the field from the dictionary to avoid computing the distance to itself
+        current_field = fields.pop(field_id)
+        for field in fields.values():
+            field['distance'] = angle(current_field['ra'], current_field['dec'], field['ra'], field['dec'])
 
+        for field in fields.values():
+            field['airmass'] = self.airmass(field_id, t)
+
+        max_probdensity = max([field['probdensity'] for field in fields.values()])
+        max_distance = max([field['distance'] for field in fields.values()])
+        max_airmass = max([field['airmass'] for field in fields.values() if field['airmass'] < self.max_airmass])
+
+
+        for field_id in fields.keys():
+            field = fields[field_id]
+            if field['airmass'] >= self.max_airmass:
+                fields[field_id]["score"] = 0
+            else:
+                fields[field_id]["score"] = (
+                    weights[0] * ((field['probdensity']) / max_probdensity) +           # the higher the better
+                    weights[1] * ((max_distance - field['distance']) / max_distance) +  # the lower the better
+                    weights[2] * ((field['airmass']) / max_airmass)                     # the higher the better
+                )
+
+        # sort the fields by distance
+        fields = {k: v for k, v in sorted(fields.items(), key=lambda item: item[1]['score'], reverse=True)}
+
+        # add a penalty to the fields from the secondary grid
+        primary = {}
+        secondary = {}
+        for field_id in fields.keys():
+            if field_id < self.primary_limit:
+                primary[field_id] = fields[field_id]
+            else:
+                secondary[field_id] = fields[field_id]
+
+        fields = {**primary, **secondary}
+
+        return fields
+    
     @timeit
     def schedule(self, method='greedy'): #TODO: I'm just experimenting with this to see what can be done and how
         # this is not a good way to schedule observations, it's clearly suboptimal so far. I want to have a look at
@@ -495,71 +554,101 @@ class Telescope:
         """Schedule observations of the fields based on their observability and probdensity (greedy algorithm).
         Fields from the primary grid are scheduled first, then fields from the secondary grid."""
         # rank the observable fields by probdensity
-        fields = self.observable_fields
-        fields = {k: v for k, v in sorted(fields.items(), key=lambda item: item[1]['probdensity'], reverse=True)}
 
-        # rerank based on whether the field is in the primary or secondary grid using self.primary_limit
-        primary_fields = {}
-        secondary_fields = {}
-        for field_id in fields.keys():
-            field = fields[field_id]
-            if field_id < self.primary_limit:
-                primary_fields[field_id] = field
-            else:
-                secondary_fields[field_id] = field
-        fields = {**primary_fields, **secondary_fields}
+        observable_fields = deepcopy(self.observable_fields)
 
         max_total_obs = len(self.deltaT)
-        max_obs_per_filter = max_total_obs // len(self.filters) if max_total_obs // len(self.filters) < len(fields) else len(fields)
+        max_obs_per_filter = max_total_obs // len(self.filters) if max_total_obs // len(self.filters) < len(observable_fields) else len(observable_fields)
+        if max_total_obs > 0 and max_obs_per_filter == 0:
+            max_obs_per_filter = 1
         max_obs_per_field = len(self.filters)
-        # schedule the fields
-        plan = []
-        # scheduled will be a dict with key = field_id and value is a dict with last_obs_time and nb_obs
-        scheduled_lookup = {field_id: {"last_obs_time": (self.start_date - timedelta(self.min_time_interval)), "nb_obs": 0} for field_id in fields.keys()}
-        if method == 'greedy':
-            current_filter_id = 0
-            nb_obs_per_filter = 0
-            last_filter_change = self.start_date
-            last_observation = self.start_date
-            for i, t in enumerate(self.deltaT):
-                if nb_obs_per_filter >= max_obs_per_filter and t > last_filter_change + timedelta(seconds=self.min_time_interval):
-                    if current_filter_id < len(self.filters) - 1:
-                        current_filter_id += 1
-                        nb_obs_per_filter = 0
-                    else: #reset the filter id to 0
-                        current_filter_id = 0
-                        nb_obs_per_filter = 0
-                    last_filter_change = t
-                for field_id in fields.keys():
-                    scheduled = scheduled_lookup[field_id]
-                    if (
-                        scheduled['nb_obs'] < max_obs_per_field and scheduled['nb_obs'] <= current_filter_id and scheduled['last_obs_time'] < last_filter_change
-                        and fields[field_id]['airmasses'][i] < self.max_airmass and self.moon_angle(field_id, t) > self.min_moon_angle and self.galactic_plane(field_id, t) > self.min_galactic_latitude
-                        ):
-                        plan.append({
-                            "obstime": t.isot,
-                            "field_id": field_id,
-                            "filt": self.filters[current_filter_id],
-                            "exposure_time": self.exposure_time,
-                            "probdensity": fields[field_id]['probdensity'],
-                        })
-                        scheduled_lookup[field_id]['last_obs_time'] = t
-                        scheduled_lookup[field_id]['nb_obs'] += 1
-                        nb_obs_per_filter += 1
-                        last_observation = t
+
+        print(f"max_total_obs (possible time-wise): {max_total_obs}")
+        print(f"max_obs_per_filter: {max_obs_per_filter}")
+        print(f"max_obs_per_field: {max_obs_per_field}")
+
+        # sort the fields by probdensity
+        ranked_fields = {k: v for k, v in sorted(observable_fields.items(), key=lambda item: item[1]['probdensity'], reverse=True)}
+
+        # add a penalty to the fields from the secondary grid
+        primary = {}
+        secondary = {}
+        for field_id in ranked_fields.keys():
+            if field_id < self.primary_limit:
+                primary[field_id] = ranked_fields[field_id]
+            else:
+                secondary[field_id] = ranked_fields[field_id]
+
+        ranked_fields = {**primary, **secondary}
+
+        plan_per_filter = {filter_id: {} for filter_id in range(len(self.filters))}
+
+        # first we keep only N fields with N = max_obs_per_filter if N < len(fields) else len(fields)
+
+        # we schedule the fields for each filter
+        t = self.start_date
+        id = 0
+        for filter_id in range(len(self.filters)):
+            fields = deepcopy(ranked_fields)
+            nothing_to_observe = False
+            while len(plan_per_filter[filter_id]) < max_obs_per_filter and t + timedelta(seconds=self.exposure_time) < self.end_date and len(fields) > 0 and not nothing_to_observe:
+                #print(f"Nb fields left: {len(fields)}, Nb fields scheduled: {len(plan_per_filter[filter_id])}, t: {t}, end_date: {self.end_date}")
+                for i, field_id in enumerate(fields.keys()):
+                    not_observing = False
+                    if field_id in plan_per_filter[filter_id].keys():
+                        not_observing = True
+                    if self.airmass(field_id, t) > self.max_airmass or self.airmass(field_id, t + timedelta(seconds=self.exposure_time)) > self.max_airmass:
+
+                        not_observing = True
+                    if self.moon_angle(field_id, t) < self.min_moon_angle or self.moon_angle(field_id, t + timedelta(seconds=self.exposure_time)) < self.min_moon_angle:
+                        not_observing = True
+                    if self.galactic_plane(field_id, t) < self.min_galactic_plane or self.galactic_plane(field_id, t + timedelta(seconds=self.exposure_time)) < self.min_galactic_plane:
+                        not_observing = True
+                    if not_observing and i == len(list(fields.keys())) - 1:
+                        print(f"Nothing observable at {t}")
+                        nothing_to_observe = True
+                        t += timedelta(seconds=self.exposure_time)
                         break
+                    if not_observing:
+                        #print(f"Skipping field {field_id} at {t} for filter {self.filters[filter_id]}")
+                        continue
+                    plan_per_filter[filter_id][field_id] = {
+                        'id': id,
+                        'field_id': field_id,
+                        'filt': self.filters[filter_id],
+                        'obstime': t,
+                        'exposure_time': self.exposure_time,
+                        'probability': fields[field_id]['probdensity'],
+                    }
+                    t += timedelta(seconds=self.exposure_time)
+                    # reorder the fields by distance to the current field
+                    fields = self.reorder(field_id, fields, t)
+                    #print(f"field {field_id} scheduled at {plan_per_filter[filter_id][field_id]['obstime']} for filter {self.filters[filter_id]}")
+                    #time.sleep(0.5)
+                    break
 
-            start_time = ap_time.Time(plan[0]['obstime'], format='isot')
-            end_time = last_observation + timedelta(seconds=self.exposure_time)
+        start_time = ap_time.Time(plan_per_filter[0][list(plan_per_filter[0].keys())[0]]['obstime'])
+        end_time = t
 
-            self.plan = {
-                'nb_observations': len(plan),
-                'nb_fields': len(set([obs['field_id'] for obs in plan])),
-                'validity_window_start': start_time.isot,
-                'validity_window_end': end_time.isot,
-                'total_time': (end_time - start_time).sec,
-                'planned_observations': plan,
-            }
+        observations = []
+        for filter_id, plan in plan_per_filter.items():
+            observations.extend(plan.values())
+            print(f"{self.filters[filter_id]}: {list([obs['field_id'] for obs in plan.values()])}")
+
+        # for each observations, convert the Time object to a iso string
+        for obs in observations:
+            if isinstance(obs['obstime'], ap_time.Time):
+                obs['obstime'] = obs['obstime'].isot
+
+        self.plan = {
+            'name': f"ToO_{datetime.utcnow()}",
+            'nb_observations': len(observations),
+            'nb_fields': len(set([obs['field_id'] for obs in observations])),
+            'validity_window_start': start_time.isot,
+            'validity_window_end': end_time.isot,
+            'total_time': (end_time - start_time).sec,
+            'planned_observations': observations,
+        }
 
     def save_plan(self, filename, plan=None):
         """Save the plan to a json file."""
