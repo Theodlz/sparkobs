@@ -15,7 +15,7 @@ def boolean_string(s):
     return s == 'True'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--skymap_url', type=str, help='URL of the skymap')
+parser.add_argument('--skymap', type=str, help='URL or Path of the skymap')
 parser.add_argument('--level', type=float, default=0.95, help='credible level of the skymap')
 parser.add_argument('--save_to', type=str, default=None, help='path to the plan file to save')
 parser.add_argument('--telescope', type=str, default=None, help='path to the telescope configuration file')
@@ -29,6 +29,7 @@ parser.add_argument('--min_moon_angle', type=float, default=10, help='minimum an
 parser.add_argument('--min_galactic_latitude', type=float, default=10, help='minimum galactic latitude in degrees')
 parser.add_argument('--use_primary', type=boolean_string, default=True, help='whether or not to observe the primary grid')
 parser.add_argument('--use_secondary', type=bool, default=False, help='whether or not to observe the secondary grid')
+parser.add_argument('--weights', type=float, nargs='+', default=[2, 1, 1], help='weights for the filters (probability, distance, airmass)')
 args = parser.parse_args()
 
 # load the telescope configuration
@@ -71,11 +72,14 @@ elif args.end_date is None and args.start_date is not None:
 else:
     config['end_date'] = ap_time.Time(args.end_date, format='iso', scale='utc')
 
+if not isinstance(args.weights, list) or len(args.weights) != 3:
+    raise ValueError('Please provide a list of exactly three weights: probability, distance, airmass')
+
 # load the skymap
-if args.skymap_url is None:
+if args.skymap is None:
     raise ValueError('Please provide a valid path to the skymap')
 
-skymap = skymap_from_url(args.skymap_url, args.level)
+skymap = skymap_from_url(args.skymap, args.level)
 
 # create the telescope
 telescope = Telescope(config)
@@ -84,10 +88,10 @@ telescope = Telescope(config)
 telescope.compute_observability(skymap)
 
 # schedule the observations
-telescope.schedule()
+telescope.schedule(weights=args.weights if args.weights is not None else [2, 1, 1])
 
 # save the plan
 if args.save_to is None:
-    args.save_to = f'plans/{os.path.basename(args.skymap_url).split(".")[0]}.json'
+    args.save_to = f'plans/{os.path.basename(args.skymap).split(".")[0]}.json'
 
 telescope.save_plan(args.save_to)

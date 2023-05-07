@@ -32,12 +32,12 @@ For now, it only works for ZTF, which fields and tiles are precomputed and store
 
 You can run it on a skymap given its URL, for example:
 ```bash
-python -m sparkobs --telescope="config/ztf.toml" --skymap_url="https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit"
+python -m sparkobs --telescope="config/ztf.toml" --skymap="https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2023/bn230430325/quicklook/glg_healpix_all_bn230430325.fit"
 ```
 
 or on a larger localization, for example:
 ```bash
-python -m sparkobs --telescope="config/ztf.toml" --skymap_url="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=0.95
+python -m sparkobs --telescope="config/ztf.toml" --skymap="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=0.95
 ```
 
 Also, you can run the integration tests with
