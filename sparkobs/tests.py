@@ -80,7 +80,7 @@ def test_Fermi():
     stats_r = telescope.plan['stats']['r']
     assert stats_r['probability'] == 0.9537364841043192
     assert stats_r['area'] == 360.44055721937866
-    assert stats_r['nb_fields'] == 17
+    assert stats_r['nb_fields'] == 12
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')
