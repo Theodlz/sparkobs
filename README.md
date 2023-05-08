@@ -40,6 +40,13 @@ or on a larger localization, for example:
 python -m sparkobs --telescope="config/ztf.toml" --skymap="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=0.95
 ```
 
+You can specify the weights to use for the scheduler as such:
+```bash
+python -m sparkobs --telescope="config/ztf.toml" --skymap="https://gracedb.ligo.org/api/superevents/MS230502c/files/bayestar.fits.gz,1" --level=0.95 --weights 4 2 3
+```
+
+The weights correspond to: probability, distance, and airmass. That way, you can prioritize the probability of the event, or the distance, or the airmass, or a combination of those to create different strategies.
+
 Also, you can run the integration tests with
 ```bash
 python -m pytest sparkobs/tests.py
