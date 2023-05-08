@@ -35,20 +35,20 @@ def test_LVC():
 
     telescope = Telescope(gw_config)
     telescope.compute_observability(skymap)
-    assert len(telescope.observable_fields) == 50
+    assert len(telescope.observable_fields) == 46
 
     telescope.schedule()
-    assert len(telescope.plan['planned_observations']) == 62
+    assert len(telescope.plan['planned_observations']) == 81
 
     stats_g = telescope.plan['stats']['g']
-    assert stats_g['probability'] == 0.7948509291241069
-    assert stats_g['area'] == 741.6241257405189
-    assert stats_g['nb_fields'] == 23
+    assert stats_g['probability'] == 0.8054749503900911
+    assert stats_g['area'] == 806.207116041358
+    assert stats_g['nb_fields'] == 34
 
     stats_r = telescope.plan['stats']['r']
-    assert stats_r['probability'] == 0.761766616189799
-    assert stats_r['area'] == 707.3737323361398
-    assert stats_r['nb_fields'] == 22
+    assert stats_r['probability'] == 0.7657099801081783
+    assert stats_r['area'] == 755.7380286414332
+    assert stats_r['nb_fields'] == 32
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')
@@ -67,20 +67,20 @@ def test_Fermi():
 
     telescope = Telescope(fermi_config)
     telescope.compute_observability(skymap)
-    assert len(telescope.observable_fields) == 17
+    assert len(telescope.observable_fields) == 13
 
     telescope.schedule()
-    assert len(telescope.plan['planned_observations']) == 34
+    assert len(telescope.plan['planned_observations']) == 39
 
     stats_g = telescope.plan['stats']['g']
-    assert stats_g['probability'] == 0.9582597707790319
-    assert stats_g['area'] == 367.7384777437539
-    assert stats_g['nb_fields'] == 12
+    assert stats_g['probability'] == 0.882872882510516
+    assert stats_g['area'] == 318.0431141730083
+    assert stats_g['nb_fields'] == 13
 
     stats_r = telescope.plan['stats']['r']
-    assert stats_r['probability'] == 0.9537364841043192
-    assert stats_r['area'] == 360.44055721937866
-    assert stats_r['nb_fields'] == 12
+    assert stats_r['probability'] == 0.882872882510516
+    assert stats_r['area'] == 318.0431141730083
+    assert stats_r['nb_fields'] == 13
 
     telescope.save_plan('plans/test.json')
     assert os.path.exists('plans/test.json')
